@@ -96,14 +96,13 @@ def query_ipmi_metrics_from_fallback(sensors_dict):
         if match:
             label = match.group(1).strip()
             address = match.group(2).strip()
-            value = match.group(3).strip()
+            value = match.group(3).strip().split(' ')[0]
 
             (domain, label) = sensors_dict[address]
             if domain not in ipmi_measures:
                 ipmi_measures[domain] = {}
-            ipmi_measures[domain][label]=value
+            ipmi_measures[domain][label] = value
 
-    print(ipmi_measures)
     return ipmi_measures
 
 def query_ipmi_metrics_from_lan(ipmi, sensors_dict):
@@ -252,15 +251,15 @@ def output(ipmi_measures : dict, dcgm_measures : dict, smi_measures : dict, time
         # IPMI
         for domain, domain_dict in ipmi_measures.items():
             for key, value in domain_dict.items():
-                f.write(str(time_since_launch) + ',' + domain + ',ipmi_' + key + ',' + str(value) + OUTPUT_NL)
+                f.write(str(time_since_launch) + ',' + domain + ',IPMI_' + key.replace(' ', '_').upper() + ',' + str(value) + OUTPUT_NL)
         # DCGM
         for domain, domain_dict in dcgm_measures.items():
             for key, value in domain_dict.items():
-                f.write(str(time_since_launch) + ',' + domain + ',dcgm_' + key + ',' + str(value) + OUTPUT_NL)
+                f.write(str(time_since_launch) + ',' + domain + ',' + key.replace(' ', '_').upper() + ',' + str(value) + OUTPUT_NL)
         # SMI
         for gpu_index, gpu_dict in smi_measures.items():
             for key, value in gpu_dict.items():
-                f.write(str(time_since_launch) + ',' + gpu_index + ',smi_' + key + ',' + str(value) + OUTPUT_NL)
+                f.write(str(time_since_launch) + ',' + gpu_index + ',SMI_' + key.replace(' ', '_').upper() + ',' + str(value) + OUTPUT_NL)
 
 ###########################################
 # Entrypoint, manage arguments
