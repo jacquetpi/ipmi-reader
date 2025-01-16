@@ -90,13 +90,13 @@ def query_ipmi_metrics_from_fallback(sensors_dict):
         exit(1)
 
     ipmi_measures = {}
-    for line in result.strip().split("\n"):
+    for line in result.stdout.strip().splitlines():
+        if 'Disabled' in line: continue
         match = re.match(r"(.+?)\s+\|\s+([0-9A-Fa-f]{2}h)\s+\|\s+\w+\s+\|\s+[\d.]+\s+\|\s+(.+)", line)
         if match:
             label = match.group(1).strip()
             address = match.group(2).strip()
             value = match.group(3).strip()
-            result[label] = {"address": address, "value": value}
 
             (domain, label) = sensors_dict[address]
             if domain not in ipmi_measures:
@@ -104,7 +104,7 @@ def query_ipmi_metrics_from_fallback(sensors_dict):
             ipmi_measures[domain][label]=value
 
     print(ipmi_measures)
-    return sensors_dict
+    return ipmi_measures
 
 def query_ipmi_metrics_from_lan(ipmi, sensors_dict):
     ipmi_measures = {}
