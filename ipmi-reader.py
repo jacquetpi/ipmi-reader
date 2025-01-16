@@ -54,18 +54,19 @@ def discover_ipmi_addresses():
     # Extract label and address using regex
     output = result.stdout.strip().splitlines()
     sensors_dict = {}
-
+    gpu_found = 0
     for line in output:
+        if 'Disabled' in line: continue
         match = re.match(r'(\S.+?)\s+\| ([0-9A-Fa-f]+h)', line)
         if match:
             label, address = match.groups()
             label = label.strip()
-            
+
             # Check label consistency and unicity
             domain = 'global'
             if 'GPU' in label:
-                doman_index = int(''.join(i for i in domain if i.isdigit())) -1
-                domain = 'GPU' + doman_index
+                domain = 'GPU' + str(gpu_found)
+                gpu_found+=1
 
             uniqueness_count = 0
             while label in sensors_dict.keys():
@@ -74,16 +75,14 @@ def discover_ipmi_addresses():
                     label = re.sub('(.*?)', '', label)
                 label+='(' + str(uniqueness_count) +  ')'
 
-            sensors_dict[label.strip()] = (domain.strip(),address.strip())
+            sensors_dict[label.strip()] = (domain.strip(), address.replace('h','').strip())
 
-    # Display the result
-    for label, address in sensors_dict.items():
-        print(f"Label: {label}, Address: {address}")
     return sensors_dict
 
 def query_ipmi_metrics(ipmi, sensors_dict):
     ipmi_measures = {}
     for sensor_label, (domain, sensor_address) in sensors_dict.items():
+        print(domain)
         reading, states = ipmi.get_sensor_reading(sensor_number='0x'+str(sensor_address))
         if domain not in ipmi_measures:
             ipmi_measures[domain] = {}
@@ -100,37 +99,37 @@ def query_dcgm_metrics():
         cmd = "curl -s " + DCGM_EXPORT_URL
         result = sp.run(cmd, shell=True, text=True, capture_output=True, check=True)
         output = result.stdout
-        
+
         dcgm_measures = {}
         for line in output.splitlines():
             # Skip comments and empty lines
             if line.startswith('#') or not line.strip():
                 continue
-            
-        # Match metric name, labels, and value
-        match = re.match(r'^([\w:]+)(\{.*\})?\s+([\d.]+)', line)
-        if match:
-            metric_name = match.group(1)
-            labels = match.group(2)  # e.g., {gpu="0"}
-            value = match.group(3)
 
-            # Parse labels if present
-            label_dict = {}
-            if labels: # Remove the surrounding braces and split into key-value pairs
-                label_pairs = labels.strip('{}').split(',')
-                for pair in label_pairs:
-                    key, val = pair.split('=')
-                    label_dict[key.strip()] = val.strip('"')
+            # Match metric name, labels, and value
+            match = re.match(r'^([\w:]+)(\{.*\})?\s+([\d.]+)', line)
+            if match:
+                metric_name = match.group(1)
+                labels = match.group(2)  # e.g., {gpu="0"}
+                value = match.group(3)
 
-            if label_dict:
-                domain = 'GPU' + str(label_dict["gpu"])
-                if domain not in dcgm_measures:
-                    dcgm_measures[domain] = {}
-                try:
-                    dcgm_measures[domain][metric_name] = float(value)
-                except ValueError:
-                    dcgm_measures[domain][metric_name] = value  # Keep as string if not a float
-        
+                # Parse labels if present
+                label_dict = {}
+                if labels: # Remove the surrounding braces and split into key-value pairs
+                    label_pairs = labels.strip('{}').split(',')
+                    for pair in label_pairs:
+                        key, val = pair.split('=')
+                        label_dict[key.strip()] = val.strip('"')
+
+                if label_dict:
+                    domain = 'GPU' + str(label_dict["gpu"])
+                    if domain not in dcgm_measures:
+                        dcgm_measures[domain] = {}
+                    try:
+                        dcgm_measures[domain][metric_name] = float(value)
+                    except ValueError:
+                        dcgm_measures[domain][metric_name] = value  # Keep as string if not a float
+
         return dcgm_measures
     except sp.CalledProcessError as e:
         print(f"DCGM parsing failed with error: {e.stderr}")
@@ -174,7 +173,7 @@ def __convert_cg_to_dict(header : list, data_single_gc : list):
             value = float(re.sub(r"[^\d\.]", "", data_single_gc[position]))
         else:
             value = data_single_gc[position].strip()
-        if 'query' == 'index':
+        if query == 'index':
             gpu_index = 'GPU' + str(value)
             continue
         gpu_data[query] = value
@@ -195,7 +194,7 @@ def query_smi():
 # Main loop, read periodically
 ###########################################
 def loop_read(ipmi, ipmi_addresses):
-    
+
     launch_at = time.time_ns()
     while True:
         time_begin = time.time_ns()
@@ -227,23 +226,23 @@ def output(ipmi_measures : dict, dcgm_measures : dict, smi_measures : dict, time
         # IPMI
         for domain, domain_dict in ipmi_measures.items():
             for key, value in domain_dict.items():
-                f.write(str(time_since_launch) + ',' + domain + ', ipmi_' + key + ',' + str(value) + OUTPUT_NL)
+                f.write(str(time_since_launch) + ',' + domain + ',ipmi_' + key + ',' + str(value) + OUTPUT_NL)
         # DCGM
         for domain, domain_dict in dcgm_measures.items():
             for key, value in domain_dict.items():
-                f.write(str(time_since_launch) + ',' + domain + ', dcgm_' + key + ',' + str(value) + OUTPUT_NL)
+                f.write(str(time_since_launch) + ',' + domain + ',dcgm_' + key + ',' + str(value) + OUTPUT_NL)
         # SMI
         for gpu_index, gpu_dict in smi_measures.items():
             for key, value in gpu_dict.items():
-                f.write(str(time_since_launch) + ',' + gpu_index + ', smi_' + key + ',' + str(value) + OUTPUT_NL)
+                f.write(str(time_since_launch) + ',' + gpu_index + ',smi_' + key + ',' + str(value) + OUTPUT_NL)
 
 ###########################################
 # Entrypoint, manage arguments
 ###########################################
 if __name__ == '__main__':
 
-    short_options = 'hlecdv:o:p:'
-    long_options = ['help', 'live', 'explicit', 'cache', 'vm=', 'delay=', 'output=', 'precision=']
+    short_options = 'hld:o:p:u:'
+    long_options = ['help', 'live', 'delay=', 'output=', 'precision=', 'url=']
 
     try:
         arguments, values = getopt.getopt(sys.argv[1:], short_options, long_options)
@@ -256,13 +255,14 @@ if __name__ == '__main__':
             sys.exit(0)
         elif current_argument in('-l', '--live'):
             LIVE_DISPLAY= True
+        elif current_argument in('-d', '--delay'):
+            DELAY_S= float(current_value)
         elif current_argument in('-o', '--output'):
             OUTPUT_FILE= current_value
         elif current_argument in('-p', '--precision'):
             PRECISION= int(current_value)
-        elif current_argument in('-d', '--delay'):
-            DELAY_S= float(current_value)
-
+        elif current_argument in('-u', '--url'):
+            IPMI_URL= current_value
     try:
         # Find domains
         print('>SMI GC found:')
@@ -270,13 +270,15 @@ if __name__ == '__main__':
         # Connect IPMI session
         ipmi = connect_ipmi_session()
         sensors_dict = discover_ipmi_addresses()
-        print('IPMI sensors:', sensors_dict)
+        print('IPMI sensors:')
+        for label, address in sensors_dict.items():
+           print(f"{label}, Domain & Address: {address}")
 
         # Init output
         with open(OUTPUT_FILE, 'w') as f: f.write(OUTPUT_HEADER + OUTPUT_NL)
 
         # Launch
-        loop_read()
+        loop_read(ipmi,sensors_dict)
     except KeyboardInterrupt:
         print('Program interrupted')
         if ipmi is not None: disconnect_ipmi_session(ipmi)
