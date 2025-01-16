@@ -27,6 +27,7 @@ def print_usage():
 # Read IPMI
 ###########################################
 
+# I don't use the IPMI lan interface due to inconsistency between g5k hosts (see fallback)
 def connect_ipmi_session():
     interface = pyipmi.interfaces.create_interface('ipmitool',  interface_type='lan')
     ipmi = pyipmi.create_connection(interface)
@@ -75,14 +76,39 @@ def discover_ipmi_addresses():
                     label = re.sub('(.*?)', '', label)
                 label+='(' + str(uniqueness_count) +  ')'
 
-            sensors_dict[label.strip()] = (domain.strip(), address.replace('h','').strip())
+            sensors_dict[address.strip()] = (domain.strip(), label.strip())
 
     return sensors_dict
 
-def query_ipmi_metrics(ipmi, sensors_dict):
+def query_ipmi_metrics_from_fallback(sensors_dict):
+    cmd = SUDO_COMMAND + " ipmitool sdr type temperature"
+    result = sp.run(cmd, shell=True, capture_output=True, text=True)
+
+    # Check for errors
+    if result.returncode != 0:
+        print("Command failed:", result.stderr)
+        exit(1)
+
     ipmi_measures = {}
-    for sensor_label, (domain, sensor_address) in sensors_dict.items():
-        print(domain)
+    for line in result.strip().split("\n"):
+        match = re.match(r"(.+?)\s+\|\s+([0-9A-Fa-f]{2}h)\s+\|\s+\w+\s+\|\s+[\d.]+\s+\|\s+(.+)", line)
+        if match:
+            label = match.group(1).strip()
+            address = match.group(2).strip()
+            value = match.group(3).strip()
+            result[label] = {"address": address, "value": value}
+
+            (domain, label) = sensors_dict[address]
+            if domain not in ipmi_measures:
+                ipmi_measures[domain] = {}
+            ipmi_measures[domain][label]=value
+
+    print(ipmi_measures)
+    return sensors_dict
+
+def query_ipmi_metrics_from_lan(ipmi, sensors_dict):
+    ipmi_measures = {}
+    for sensor_address, (domain, sensor_label) in sensors_dict.items():
         reading, states = ipmi.get_sensor_reading(sensor_number='0x'+str(sensor_address))
         if domain not in ipmi_measures:
             ipmi_measures[domain] = {}
@@ -199,7 +225,7 @@ def loop_read(ipmi, ipmi_addresses):
     while True:
         time_begin = time.time_ns()
 
-        ipmi_measures = query_ipmi_metrics(ipmi, ipmi_addresses)
+        ipmi_measures = query_ipmi_metrics_from_fallback(ipmi_addresses)
         smi_measures  = query_smi()
         dcgm_measures = query_dcgm_metrics()
 
@@ -268,7 +294,7 @@ if __name__ == '__main__':
         print('>SMI GC found:')
         for gc in discover_smi(): print(gc[0])
         # Connect IPMI session
-        ipmi = connect_ipmi_session()
+        ipmi = None #connect_ipmi_session()
         sensors_dict = discover_ipmi_addresses()
         print('IPMI sensors:')
         for label, address in sensors_dict.items():

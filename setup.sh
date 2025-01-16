@@ -7,3 +7,4 @@ sudo-g5k ipmitool user list 1
 # To retrieve an ip:
 IPMI_IP=$(sudo-g5k ipmitool lan print | grep "IP Address  " | cut -d: -f2 | tr -d [:blank:])
 echo $IPMI_IP
+source venv/bin/activate
