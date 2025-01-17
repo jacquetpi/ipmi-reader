@@ -68,6 +68,8 @@ def discover_ipmi_addresses():
             if 'GPU' in label:
                 domain = 'GPU' + str(gpu_found)
                 gpu_found+=1
+                print('GPU Temperature sensor, changed label from', label, 'to IPMI_GPU_TEMP')
+                label = 'GPU_TEMP'
 
             uniqueness_count = 0
             while label in sensors_dict.keys():

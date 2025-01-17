@@ -3,6 +3,7 @@
 *.csv
 measures/
 measures-stress/
+data/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

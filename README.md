@@ -17,7 +17,7 @@ Curl and ipmitool
 git clone https://github.com/jacquetpi/ipmi-reader
 python3 -m venv venv
 source venv/bin/activate
-python3 -m pip install python-ipmi
+python3 -m pip install -r requirements.txt
 ```
 
 ## Usage
